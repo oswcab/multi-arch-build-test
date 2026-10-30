@@ -29,7 +29,7 @@ func TestSetLatestWaitsForCrossProcessLock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer unix.Close(fd)
+		defer func() { _ = unix.Close(fd) }()
 		if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err == nil {
 			_ = unix.Flock(fd, unix.LOCK_UN)
 			t.Fatal("non-blocking lock unexpectedly acquired while parent holds the lock")
@@ -72,7 +72,7 @@ func TestSetLatestWaitsForCrossProcessLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lockFile.Close()
+	defer func() { _ = lockFile.Close() }()
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
