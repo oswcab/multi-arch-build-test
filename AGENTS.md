@@ -112,7 +112,7 @@ tied to one cluster name.
 
 **`internal/cluster/`** — Kubernetes interactions
 - `RealCluster` wraps k8s client-go operations
-- Preflight checks validate cluster prerequisites (multi-platform-controller deployment, host-config entries)
+- Preflight checks validate cluster prerequisites (multi-platform-controller deployment rollout, `host-config` ConfigMap label, per-platform keys the controller parses, and referenced secret keys)
 - Build output verification confirms node evidence (Buildah outputs) match expected architectures
 
 **`internal/providers/`** — Git forge abstraction
@@ -160,7 +160,7 @@ collector.TaskRunGVR      // tekton.dev/v1/taskruns (in failed_builds.go)
 
 ### Workflow Execution Flow
 
-1. **Preflight** — Validate cluster connectivity, multi-platform-controller deployment, host-config entries
+1. **Preflight** — Validate cluster connectivity, multi-platform-controller deployment rollout, `host-config` platform configuration and referenced secrets
 2. **Fixture Ready** — Validate test repositories are accessible, read current Dockerfile SHAs
 3. **Triggered** — Append trigger comments to Dockerfiles, commit changes
 4. **Builds Verified** — Wait for PipelineRuns to succeed (timeout configurable)
@@ -291,7 +291,7 @@ Build output verification (`internal/cluster/build_outputs.go`) confirms that Bu
 - Expects exactly one `linux/amd64` and one `linux/arm64` entry per component
 
 If this verification fails, check that:
-1. The multi-platform-controller is running and has valid `host-config` entries
+1. The multi-platform-controller is running and has valid `host-config` entries. Preflight validates the deployment rollout, the `host-config` label, the per-platform keys the controller parses (`type`, `max-instances`, `ssh-secret`, `concurrency`, `max-age`), and that the referenced SSH and provider credential secrets exist with the expected keys.
 2. The PipelineRuns completed successfully (builds-verified phase passed)
 3. The Buildah TaskRuns wrote TASKRUN_ARTIFACTS results
 
