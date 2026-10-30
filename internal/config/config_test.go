@@ -47,6 +47,13 @@ var _ = Describe("Parse", func() {
 		Expect(err).Should(MatchError(ContainSubstring("GITLAB_BOT_TOKEN")))
 	})
 
+	It("parses the repository allow-list flag", func() {
+		GinkgoT().Setenv("GITHUB_TOKEN", "token")
+		got, err := Parse([]string{"run", "github", "--cluster-server", "https://api.example", "--allow-fixture-repository"})
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(got.AllowFixtureRepository).Should(BeTrue())
+	})
+
 	It("parses cleanup by exact run ID", func() {
 		got, err := Parse([]string{"cleanup", "--run-id", "run-123", "--cluster-server", "https://api.example"})
 		Expect(err).ShouldNot(HaveOccurred())

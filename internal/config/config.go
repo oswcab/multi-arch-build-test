@@ -42,19 +42,20 @@ type Timeouts struct {
 }
 
 type Request struct {
-	Command          string
-	Provider         string
-	RunID            string
-	ResumeRunID      string
-	ClusterServer    string
-	StateDir         string
-	TenantNamespace  string
-	ApplicationName  string
-	SourceRepository string
-	SourceBranch     string
-	ComponentPaths   []string
-	Timeouts         Timeouts
-	Credentials      Credentials
+	Command                string
+	Provider               string
+	RunID                  string
+	ResumeRunID            string
+	ClusterServer          string
+	StateDir               string
+	TenantNamespace        string
+	ApplicationName        string
+	SourceRepository       string
+	SourceBranch           string
+	ComponentPaths         []string
+	AllowFixtureRepository bool
+	Timeouts               Timeouts
+	Credentials            Credentials
 }
 
 // Defaults returns a request populated with the tool's default run settings.
@@ -113,6 +114,7 @@ func Parse(args []string) (Request, error) {
 		fs.StringVar(&req.ApplicationName, "application", req.ApplicationName, "persistent Application name")
 		fs.StringVar(&req.SourceRepository, "source-repository", req.SourceRepository, "source repository")
 		fs.StringVar(&req.SourceBranch, "branch", req.SourceBranch, "source branch")
+		fs.BoolVar(&req.AllowFixtureRepository, "allow-fixture-repository", false, "temporarily add the fixture repository to the repository-validator allow list")
 		fs.DurationVar(&req.Timeouts.Preflight, "preflight-timeout", req.Timeouts.Preflight, "preflight timeout")
 		fs.DurationVar(&req.Timeouts.Trigger, "trigger-timeout", req.Timeouts.Trigger, "PipelineRun trigger window")
 		fs.DurationVar(&req.Timeouts.Build, "build-timeout", req.Timeouts.Build, "build timeout")

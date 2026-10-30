@@ -34,6 +34,8 @@ resources.
   `.tekton` configuration available on each fixture's default branch. The
   harness waits for PaC readiness before writing trigger comments and does not
   merge onboarding changes.
+- If the cluster enforces a repository allow list, the fixture URL must be
+  allowed. See [Repository admission allow list](#repository-admission-allow-list).
 
 ## Build
 
@@ -101,6 +103,9 @@ Run these commands from the repository root:
 # Or with a local env file
 ./bin/konflux-test run github --env-file .konflux-test.env
 
+# Temporarily allow the fixture repository in the admission policy
+./bin/konflux-test run github --allow-fixture-repository
+
 # Delete the namespace recorded for a run after ownership checks
 ./bin/konflux-test cleanup --run-id <run-id>
 ```
@@ -146,6 +151,32 @@ Failures name the platform and the missing key or secret, for example
 `scheduling check "multi-platform-controller/linux/arm64" failed:
 dynamic.linux-arm64.max-instances is required`.
 
+## Repository admission allow list
+
+Some clusters enforce a `repository-url-validator` ValidatingAdmissionPolicy
+that only admits PaC `Repository` objects whose URL starts with a prefix listed
+in a labeled ConfigMap in the `repository-validator` namespace. When the
+fixture repository is missing from that list, build-service reports PaC error
+54 and onboarding fails with "Git repository is restricted from being
+onboarded". Clusters that do not install the policy skip this check.
+
+Preflight reads the same allow list and fails before creating anything, naming
+the missing URL and the ConfigMap. To run anyway, either add the fixture URL to
+the ConfigMap yourself or pass `--allow-fixture-repository`: the harness appends
+the exact fixture URL to every ConfigMap the policy selects, and removes the
+lines it added once PaC onboarding finishes.
+
+ArgoCD can revert the managed ConfigMap during a long onboarding, and
+build-service records a denied repository as a permanent error. The harness
+therefore re-checks and re-applies the entry while waiting for PaC onboarding,
+and sets `build.appstudio.openshift.io/request: configure-pac` on blocked
+Components so build-service retries instead of staying in the error state.
+
+The allow list is managed by ArgoCD (application `repository-validator-<cluster>`),
+so manual changes are reverted on the next sync. The flag is meant for
+verification runs; add the repository to the ArgoCD source if it should stay
+allowed.
+
 ## Artifact retention
 
 Runtime evidence is stored under `.konflux-test-runs/`.
@@ -183,3 +214,6 @@ the namespace.
 - `preflight check "<resource>" failed` usually means the tenant namespace
   cannot be reached or the Tekton/Application API groups are not served by the
   cluster.
+- `PaC onboarding failed: ... 54` means the fixture URL is missing from the
+  repository allow list. Add it to the ConfigMap or pass
+  `--allow-fixture-repository`.
