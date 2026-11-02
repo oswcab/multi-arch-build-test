@@ -5,14 +5,9 @@ cluster, independent of where it is deployed (ROKS, ROSA, OpenShift, or
 another platform). Nothing in the harness is platform-specific: the target is
 selected by the kubeconfig and the `KONFLUX_CLUSTER_SERVER` guard.
 
-The harness reuses fixed repositories, appends one harmless comment to each of
-their three Dockerfiles, waits for matching successful PipelineRuns, verifies
+The harness reuses fixed repositories, appends one harmless comment to every
+fixture Dockerfile, waits for matching successful PipelineRuns, verifies
 pre-publication `linux/amd64` and `linux/arm64` build outputs, then stops.
-
-Fixed fixtures:
-
-- [dr_test_mathwizz](https://github.com/redhat-appstudio-qe/dr_test_mathwizz)
-- [dr_test_mathwizz_gl](https://gitlab.com/konflux-qe/dr_test_mathwizz_gl)
 
 The harness never copies, creates, forks, renames, or deletes repositories. It
 does not query registries, archives, pruning, backup services, or unrelated
@@ -30,10 +25,11 @@ resources.
   Dynamic arm64 provisioning is sufficient; physical arm64 nodes are not
   required. Preflight validates the deployment, the platform configuration,
   and the referenced secrets.
-- PaC onboarding must be complete for all three components, with current
-  `.tekton` configuration available on each fixture's default branch. The
-  harness waits for PaC readiness before writing trigger comments and does not
-  merge onboarding changes.
+- Pipelines as Code able to onboard the fixture components. The harness
+  creates the Application and Components, waits for PaC readiness before
+  writing trigger comments, and never merges onboarding changes.
+- For GitHub runs, the cluster's Pipelines as Code GitHub App installed on the
+  fixture repository's owner. Otherwise PaC onboarding fails with error 70.
 - If the cluster enforces a repository allow list, the fixture URL must be
   allowed. See [Repository admission allow list](#repository-admission-allow-list).
 
@@ -55,6 +51,31 @@ go build -o bin/konflux-test ./cmd/konflux-test
 ```
 
 `make verify` runs formatting, `go vet`, and the test suites.
+
+## Fixtures
+
+The harness only works with these repositories; it never creates, forks, or
+deletes them.
+
+| Provider | Repository | Components | Dockerfiles |
+|---|---|---|---|
+| GitHub | `https://github.com/oswcab/konflux-test-project` | `konflux-test-project-c30af` | `Dockerfile` |
+| GitLab | `https://gitlab.com/konflux-qe/dr_test_mathwizz_gl` | `mathwizz-web-server`, `mathwizz-history-worker`, `mathwizz-frontend` | `web-server/Dockerfile`, `history-worker/Dockerfile`, `frontend/Dockerfile` |
+
+The harness creates a tenant namespace, an Application, and the Components for
+each provider, then triggers PaC with a commit to each Dockerfile. The fixture
+repositories must already contain `.tekton` PipelineRuns matching the harness
+identifiers:
+
+| Provider | Tenant namespace | Application | Components |
+|---|---|---|---|
+| GitHub | `hcaballe-tenant` | `konflux-multi-arch-test` | `konflux-test-project-c30af` |
+| GitLab | `mathwizz-test-gitlab` | `mathwizz` | `mathwizz-web-server`, `mathwizz-history-worker`, `mathwizz-frontend` |
+
+The GitHub fixture's push PipelineRun must use
+`output-image: quay.io/redhat-user-workloads-stage/hcaballe-tenant/konflux-test-project-c30af`
+and build only `linux/x86_64` and `linux/arm64`. Change the identifiers in the
+repository and in `internal/config` together.
 
 ## Configuration
 

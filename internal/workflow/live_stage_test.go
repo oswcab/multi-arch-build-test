@@ -119,11 +119,11 @@ var _ = Describe("LiveStage", func() {
 
 	It("restores recorded canonical repository from manifest", func() {
 		got := fixtureFromManifest(model.FixtureIdentity{
-			RepositoryOwner: "redhat-appstudio-qe",
-			RepositoryName:  "dr_test_mathwizz",
-			Repository:      "https://github.com/redhat-appstudio-qe/dr_test_mathwizz",
+			RepositoryOwner: "oswcab",
+			RepositoryName:  "konflux-test-project",
+			Repository:      "https://github.com/oswcab/konflux-test-project",
 		})
-		want := providers.FixtureRepository{Owner: "redhat-appstudio-qe", Name: "dr_test_mathwizz", URL: "https://github.com/redhat-appstudio-qe/dr_test_mathwizz"}
+		want := providers.FixtureRepository{Owner: "oswcab", Name: "konflux-test-project", URL: "https://github.com/oswcab/konflux-test-project"}
 		Expect(got).To(Equal(want))
 	})
 

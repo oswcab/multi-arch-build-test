@@ -181,8 +181,13 @@ Uses **Ginkgo v2 + Gomega**. Test files colocated with implementation (`*_test.g
 
 ### Fixed Fixtures Only
 The harness operates against two hardcoded test repositories:
-- `redhat-appstudio-qe/dr_test_mathwizz` (GitHub)
-- `konflux-qe/dr_test_mathwizz_gl` (GitLab)
+- `oswcab/konflux-test-project` (GitHub, one component: `konflux-test-project-c30af`, `Dockerfile`)
+- `konflux-qe/dr_test_mathwizz_gl` (GitLab, three components: `mathwizz-web-server`, `mathwizz-history-worker`, `mathwizz-frontend`)
+
+The GitHub fixture's `.tekton` targets tenant namespace `hcaballe-tenant`,
+Application `konflux-multi-arch-test`, and Component `konflux-test-project-c30af`
+with `output-image: quay.io/redhat-user-workloads-stage/hcaballe-tenant/konflux-test-project-c30af`.
+The cluster's Pipelines as Code GitHub App must be installed on `oswcab`.
 
 Never suggest creating, forking, or deleting repositories. The harness reuses these fixtures across runs.
 
@@ -209,7 +214,8 @@ The tool requires an explicit `KONFLUX_CLUSTER_SERVER` guard in the environment 
 The tool uses **persistent fixtures** rather than creating/deleting test resources on every run:
 - One persistent tenant namespace per provider (GitHub, GitLab); `run both`
   starts them concurrently with distinct run IDs and artifact directories
-- One Application with three Components (`mathwizz-web-server`, `mathwizz-history-worker`, `mathwizz-frontend`)
+- GitHub: Application `konflux-multi-arch-test` with Component `konflux-test-project-c30af`
+- GitLab: Application `mathwizz` with Components `mathwizz-web-server`, `mathwizz-history-worker`, `mathwizz-frontend`
 - Persistent provider forks (never deleted by the tool)
 
 **Rationale**: Avoids PaC onboarding delays, reduces flakiness from resource creation/deletion races, enables faster iteration during development.

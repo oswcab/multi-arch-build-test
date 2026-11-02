@@ -164,10 +164,9 @@ func (s *LiveStage) EnsureFixture(ctx context.Context, manifest *model.RunManife
 		return err
 	}
 	s.Fixture = fixture
-	components := []cluster.ComponentSpec{
-		componentSpec("mathwizz-web-server", fixture.URL, s.Request.SourceBranch, s.Request.ComponentPaths[0]),
-		componentSpec("mathwizz-history-worker", fixture.URL, s.Request.SourceBranch, s.Request.ComponentPaths[1]),
-		componentSpec("mathwizz-frontend", fixture.URL, s.Request.SourceBranch, s.Request.ComponentPaths[2]),
+	components := make([]cluster.ComponentSpec, 0, len(s.Request.Components))
+	for _, component := range s.Request.Components {
+		components = append(components, componentSpec(component.Name, fixture.URL, s.Request.SourceBranch, component.Path))
 	}
 	namespace := manifest.Fixture.TenantNamespace
 	if namespace == "" {
@@ -242,7 +241,10 @@ func (s *LiveStage) TriggerComponents(ctx context.Context, manifest *model.RunMa
 	if s.Fixture.Name == "" {
 		return fmt.Errorf("run manifest does not contain a fixture repository")
 	}
-	paths := s.Request.ComponentPaths
+	paths := make([]string, 0, len(s.Request.Components))
+	for _, component := range s.Request.Components {
+		paths = append(paths, component.Path)
+	}
 	components := manifest.Fixture.Components
 	if len(paths) != len(components) {
 		return fmt.Errorf("fixture has %d components but %d Dockerfile paths", len(components), len(paths))

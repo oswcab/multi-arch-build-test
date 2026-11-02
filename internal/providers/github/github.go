@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	CanonicalFixtureURL = "https://github.com/redhat-appstudio-qe/dr_test_mathwizz"
-	canonicalOwner      = "redhat-appstudio-qe"
-	canonicalName       = "dr_test_mathwizz"
+	CanonicalFixtureURL = "https://github.com/oswcab/konflux-test-project"
+	canonicalOwner      = "oswcab"
+	canonicalName       = "konflux-test-project"
 )
 
 type client interface {
