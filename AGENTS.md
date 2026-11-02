@@ -203,6 +203,7 @@ All runtime evidence is stored under `.konflux-test-runs/`:
   creation. It is a relative symlink that exposes artifacts as they are written
   and remains on that run through success or failure until another run starts.
 - Failed runs retain `session/manifest.json`, workload snapshots, pod logs, and `collection-report.json`
+- Before the namespace cleanup prompt, the CLI prints the run outcome: failure phase and reason, fixture identifiers, trigger commits, verified PipelineRuns, failed build log paths, and the artifact directory
 - Credential-like fields in JSON evidence are redacted before writing
 
 ### Cluster Context Validation
@@ -304,6 +305,13 @@ If this verification fails, check that:
 1. The multi-platform-controller is running and has valid `host-config` entries. Preflight validates the deployment rollout, the `host-config` label, the per-platform keys the controller parses (`type`, `max-instances`, `ssh-secret`, `concurrency`, `max-age`), and that the referenced SSH and provider credential secrets exist with the expected keys.
 2. The PipelineRuns completed successfully (builds-verified phase passed)
 3. The Buildah TaskRuns wrote TASKRUN_ARTIFACTS results
+
+### PaC Onboarding Errors
+
+build-service PaC error 70 means the cluster's Pipelines as Code GitHub App is
+not installed on the fixture repository's organization; the harness cannot fix
+that, so install the app or use the GitLab fixture. The CLI appends this
+guidance to the reported PaC error.
 
 ### Provider API Rate Limits
 GitHub and GitLab providers include retry logic with exponential backoff for 5xx responses (`internal/providers/retry.go`). API rate limit (429) responses are not automatically retried.

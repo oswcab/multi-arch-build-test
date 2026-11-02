@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -73,16 +74,15 @@ func (runner LiveRunner) Run(ctx context.Context, request config.Request) error 
 		sources = append(sources, collector.KubernetesPodLogSources(clients.Kubernetes, manifest.Fixture.TenantNamespace, manifest.CreatedAt)...)
 		finalizeErr := (Lifecycle{Store: store, Namespace: stage.Namespace, Collector: collector.Collector{StateDir: request.StateDir}, Prompt: stage.Prompt, Sources: sources}).Finalize(ctx, manifest, err)
 		if finalizeErr != nil {
-			return fmt.Errorf("run %s failed at %s: %w; finalization failed: %v", manifest.RunID, manifest.Phase, err, finalizeErr)
+			return fmt.Errorf("run %s failed: %w; finalization failed: %v", manifest.RunID, err, finalizeErr)
 		}
-		return fmt.Errorf("run %s failed at %s: %w", manifest.RunID, manifest.Phase, err)
+		return fmt.Errorf("run %s failed: %w", manifest.RunID, err)
 	}
 	sources := collector.KubernetesSources(clients.Dynamic, manifest.Fixture.TenantNamespace, manifest.RunID)
 	sources = append(sources, collector.KubernetesPodLogSources(clients.Kubernetes, manifest.Fixture.TenantNamespace, manifest.CreatedAt)...)
 	if err := (Lifecycle{Store: store, Namespace: stage.Namespace, Collector: collector.Collector{StateDir: request.StateDir}, Prompt: stage.Prompt, Sources: sources}).Finalize(ctx, manifest, nil); err != nil {
 		return fmt.Errorf("run %s completed but finalization failed: %w", manifest.RunID, err)
 	}
-	fmt.Printf("completed run %s at phase %s\n", manifest.RunID, manifest.Phase)
 	return nil
 }
 
@@ -171,8 +171,12 @@ func (l Lifecycle) Finalize(ctx context.Context, manifest model.RunManifest, run
 	if namespace == "" {
 		return nil
 	}
+	if runErr != nil {
+		l.printFailureHeadline(manifest, runErr)
+	}
 	info, err := l.Namespace.Inspect(ctx, namespace)
 	if apierrors.IsNotFound(err) {
+		l.printRunSummary(manifest, runErr)
 		return nil
 	}
 	if err != nil {
@@ -180,6 +184,7 @@ func (l Lifecycle) Finalize(ctx context.Context, manifest model.RunManifest, run
 	}
 	if info.Name != namespace || info.Labels[cleanup.ManagedByLabel] != cleanup.ManagedByValue || info.RunID != manifest.RunID {
 		if runErr != nil && manifest.Phase == model.PhaseFailed {
+			l.printRunSummary(manifest, runErr)
 			return nil
 		}
 		return fmt.Errorf("tenant namespace %s is not owned by run %s", namespace, manifest.RunID)
@@ -210,13 +215,13 @@ func (l Lifecycle) Finalize(ctx context.Context, manifest model.RunManifest, run
 	} else if l.Prompt != nil {
 		return fmt.Errorf("state directory is required to verify saved artifacts before cleanup")
 	}
+	l.printRunSummary(manifest, runErr)
 	if l.Prompt == nil {
 		return nil
 	}
 	message := fmt.Sprintf("Delete owned tenant namespace %s from run %s", namespace, manifest.RunID)
 	if runErr != nil {
-		fmt.Printf("run %s failed at %s; artifacts saved before cleanup\n", manifest.RunID, manifest.Phase)
-		message = fmt.Sprintf("Run %s failed at %s; delete owned tenant namespace %s", manifest.RunID, manifest.Phase, namespace)
+		message = fmt.Sprintf("Run %s failed; delete owned tenant namespace %s", manifest.RunID, namespace)
 	}
 	approved, err := l.Prompt.Confirm(ctx, message)
 	if err != nil {
@@ -230,6 +235,57 @@ func (l Lifecycle) Finalize(ctx context.Context, manifest model.RunManifest, run
 		return err
 	}
 	return l.Namespace.WaitDeleted(ctx, namespace)
+}
+
+// printFailureHeadline reports the failure reason and artifact location before cleanup.
+func (l Lifecycle) printFailureHeadline(manifest model.RunManifest, runErr error) {
+	phase := manifest.Phase
+	message := runErr.Error()
+	if manifest.Failure != nil {
+		if manifest.Failure.Phase != "" {
+			phase = manifest.Failure.Phase
+		}
+		if manifest.Failure.Message != "" {
+			message = manifest.Failure.Message
+		}
+	}
+	fmt.Printf("run %s failed at %s: %s\n", manifest.RunID, phase, message)
+	if directory := l.artifactDirectory(manifest); directory != "" {
+		fmt.Printf("artifacts: %s\n", directory)
+	}
+}
+
+// printRunSummary reports the fixture resources and build evidence for the run.
+func (l Lifecycle) printRunSummary(manifest model.RunManifest, runErr error) {
+	if runErr == nil {
+		fmt.Printf("run %s completed: %d PipelineRun(s) succeeded, %d build output(s) verified\n", manifest.RunID, len(manifest.PipelineRuns), len(manifest.BuildOutputs))
+	}
+	if manifest.Fixture.TenantNamespace != "" {
+		fmt.Printf("namespace: %s; application: %s; components: %s\n", manifest.Fixture.TenantNamespace, manifest.Fixture.Application, strings.Join(manifest.Fixture.Components, ", "))
+	}
+	for _, commit := range manifest.TriggerCommits {
+		fmt.Printf("trigger commit: %s %s\n", commit.Component, commit.SHA)
+	}
+	for _, identity := range manifest.PipelineRuns {
+		fmt.Printf("pipeline run: %s (succeeded=%t)\n", identity.Name, identity.Succeeded)
+	}
+	if len(manifest.FailedBuildLogs) > 0 {
+		fmt.Println("failed build logs:")
+		for _, failedLog := range manifest.FailedBuildLogs {
+			fmt.Printf("  %s (%s)\n", failedLog.LogPath, failedLog.StepContainer)
+		}
+	}
+}
+
+// artifactDirectory returns the run's evidence directory when one is configured.
+func (l Lifecycle) artifactDirectory(manifest model.RunManifest) string {
+	if l.Store.Root != "" {
+		return l.Store.RunDirFor(manifest)
+	}
+	if l.Collector.StateDir != "" && manifest.ArtifactDirectory != "" {
+		return filepath.Join(l.Collector.StateDir, manifest.ArtifactDirectory)
+	}
+	return manifest.ArtifactDirectory
 }
 
 // providerFor constructs the provider client selected by request credentials.

@@ -361,6 +361,9 @@ func (s *LiveStage) VerifyBuilds(ctx context.Context, manifest *model.RunManifes
 // pacRepositoryNotAllowedErrorID is build-service's PaC "repository not allowed" error.
 const pacRepositoryNotAllowedErrorID = 54
 
+// pacGitHubAppNotInstalledErrorID is build-service's "GitHub App not installed" error.
+const pacGitHubAppNotInstalledErrorID = 70
+
 // PaC retry controls for repository admission failures.
 const (
 	pacReconfigureRequestAnnotation = "build.appstudio.openshift.io/request"
@@ -399,6 +402,12 @@ func paCStatusError(object *unstructured.Unstructured) error {
 			message = fmt.Sprintf("error ID %d", status.PaC.ErrorID)
 		}
 		return &repositoryAdmissionError{message: fmt.Sprintf("component %s PaC onboarding failed: %s; the fixture repository is missing from the repository-validator allow list: add it or rerun with --allow-fixture-repository", object.GetName(), message)}
+	}
+	if status.PaC.ErrorID == pacGitHubAppNotInstalledErrorID {
+		if message == "" {
+			message = fmt.Sprintf("error ID %d", status.PaC.ErrorID)
+		}
+		return fmt.Errorf("component %s PaC onboarding failed: %s; the Pipelines as Code GitHub App configured on this cluster is not installed on the fixture repository: install it on the repository's organization or run the GitLab fixture", object.GetName(), message)
 	}
 	if message == "" {
 		return fmt.Errorf("component %s PaC onboarding failed with error ID %d", object.GetName(), status.PaC.ErrorID)
