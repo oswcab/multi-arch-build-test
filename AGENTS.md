@@ -59,7 +59,10 @@ go test -v ./internal/workflow
 
 ### Running the Tool
 ```bash
-# GitHub test run
+# Variables exported in the shell; no env file required
+./bin/konflux-test run github
+
+# Or point at a local env file
 ./bin/konflux-test run github --env-file .konflux-test.env
 
 # GitLab test run
@@ -72,11 +75,20 @@ go test -v ./internal/workflow
 ./bin/konflux-test cleanup --run-id <run-id> --env-file .konflux-test.env
 ```
 
+Settings resolve from the process environment first, then the env file. The
+setup helper is invoked automatically. It only receives an env file when
+`--env-file` is passed or `.konflux-test.env` exists in the working directory;
+otherwise it validates the exported environment and passes `--no-env-file`.
+
 Setup helper (validates cluster connectivity and prerequisites):
 ```bash
 ./scripts/run-local.sh --setup .konflux-test.env github
-./scripts/run-local.sh --setup .konflux-test.env gitlab
+./scripts/run-local.sh --setup --no-env-file github
 ```
+
+`KUBECONFIG` may be a single file or a colon-separated list. `KONFLUX_CLUSTER_SERVER`
+must match `oc whoami --show-server` for the active context; the tool is not
+tied to one cluster name.
 
 ## Architecture
 

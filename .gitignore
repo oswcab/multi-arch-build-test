@@ -1,6 +1,5 @@
 # Local credentials.
 .konflux-test.env
-.konflux-test.env.example
 
 # Local run evidence.
 .konflux-test-runs/

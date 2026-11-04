@@ -4,7 +4,7 @@ set -euo pipefail
 
 # usage prints the setup helper's accepted arguments to standard error.
 usage() {
-    printf 'Usage: %s --setup [env-file] [github|gitlab|both]\n' "$(basename "$0")" >&2
+    printf 'Usage: %s --setup [--no-env-file] [env-file] [github|gitlab|both]\n' "$(basename "$0")" >&2
 }
 
 # trim removes leading and trailing shell whitespace from its argument.
@@ -15,10 +15,15 @@ trim() {
     printf '%s' "$value"
 }
 
-# env_value prints the requested key from ENV_FILE and returns failure when absent.
+# env_value prints the requested key from ENV_FILE and returns failure when the
+# file is not in use or does not define the key.
 env_value() {
     local requested_key=$1
     local line key value result found=1
+
+    if [[ -z "$ENV_FILE" ]]; then
+        return 1
+    fi
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         line=$(trim "$line")
@@ -60,6 +65,27 @@ resolve_path() {
     fi
 }
 
+# resolve_kubeconfig_list validates every entry of a colon-separated KUBECONFIG
+# value and prints the resolved list. Relative entries are anchored to base_dir.
+resolve_kubeconfig_list() {
+    local list=$1
+    local base_dir=$2
+    local entry resolved output=""
+    local entries=()
+
+    IFS=: read -r -a entries <<<"$list"
+    for entry in "${entries[@]}"; do
+        [[ -z "$entry" ]] && continue
+        resolved=$(resolve_path "$entry" "$base_dir")
+        if [[ ! -r "$resolved" ]]; then
+            printf 'KUBECONFIG entry is not readable: %s\n' "$resolved" >&2
+            return 1
+        fi
+        output=${output:+$output:}$resolved
+    done
+    printf '%s' "$output"
+}
+
 if [[ "${1:-}" == "--setup" ]]; then
     shift
 else
@@ -68,55 +94,69 @@ else
     exit 2
 fi
 
-env_file_input=${1:-.konflux-test.env}
-provider=${2:-}
+ENV_FILE=""
+env_dir=""
+env_file_input=""
+use_env_file=1
 
-if [[ $# -gt 2 ]]; then
-    usage
-    exit 2
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-env-file)
+            use_env_file=0
+            ;;
+        github|gitlab|both)
+            # Provider names are validated here; the setup steps are provider independent.
+            ;;
+        '')
+            ;;
+        *)
+            if [[ -n "$env_file_input" ]]; then
+                usage
+                exit 2
+            fi
+            env_file_input=$1
+            ;;
+    esac
+    shift
+done
 
-case "$provider" in
-    github|gitlab|both|'') ;;
-    *)
-        printf 'Unsupported provider: %s\n' "$provider" >&2
+if (( use_env_file == 0 )); then
+    if [[ -n "$env_file_input" ]]; then
+        printf 'The setup helper cannot combine an env file with --no-env-file: %s\n' "$env_file_input" >&2
         usage
         exit 2
-        ;;
-esac
-
-if [[ "$env_file_input" == /* ]]; then
-    ENV_FILE=$env_file_input
+    fi
+    env_dir=$PWD
 else
-    ENV_FILE=$PWD/$env_file_input
+    env_file_input=${env_file_input:-.konflux-test.env}
+    if [[ "$env_file_input" == /* ]]; then
+        ENV_FILE=$env_file_input
+    else
+        ENV_FILE=$PWD/$env_file_input
+    fi
+    if [[ ! -r "$ENV_FILE" ]]; then
+        printf 'Env file is not readable: %s\n' "$ENV_FILE" >&2
+        exit 1
+    fi
+    env_dir=$(cd -- "$(dirname -- "$ENV_FILE")" && pwd)
+    ENV_FILE=$env_dir/$(basename -- "$ENV_FILE")
 fi
-
-if [[ ! -r "$ENV_FILE" ]]; then
-    printf 'Env file is not readable: %s\n' "$ENV_FILE" >&2
-    exit 1
-fi
-
-env_dir=$(cd -- "$(dirname -- "$ENV_FILE")" && pwd)
-ENV_FILE=$env_dir/$(basename -- "$ENV_FILE")
 
 kubeconfig_value=${KUBECONFIG:-}
-if [[ -z "$kubeconfig_value" ]]; then
+if [[ -z "$kubeconfig_value" ]] && (( use_env_file )); then
     kubeconfig_value=$(env_value KUBECONFIG || true)
 fi
 if [[ -z "$kubeconfig_value" ]]; then
-    printf 'KUBECONFIG is required in the environment or env file: %s\n' "$ENV_FILE" >&2
-    exit 1
-fi
-if [[ "$kubeconfig_value" == *:* ]]; then
-    printf 'KUBECONFIG must name one kubeconfig file for this setup helper\n' >&2
+    printf 'KUBECONFIG is required in the environment or in the env file: %s\n' "${ENV_FILE:-none}" >&2
     exit 1
 fi
 
-KUBECONFIG=$(resolve_path "$kubeconfig_value" "$env_dir")
-if [[ ! -r "$KUBECONFIG" ]]; then
-    printf 'KUBECONFIG is not readable: %s\n' "$KUBECONFIG" >&2
+kubeconfig_list=$(resolve_kubeconfig_list "$kubeconfig_value" "$env_dir") || exit 1
+if [[ -z "$kubeconfig_list" ]]; then
+    printf 'KUBECONFIG does not name any kubeconfig file\n' >&2
     exit 1
 fi
+KUBECONFIG=$kubeconfig_list
 export KUBECONFIG
 
 oc_command=${KONFLUX_TEST_OC:-oc}
@@ -130,11 +170,11 @@ if [[ -z "$cluster_server" ]]; then
 fi
 
 expected_server=${KONFLUX_CLUSTER_SERVER:-}
-if [[ -z "$expected_server" ]]; then
+if [[ -z "$expected_server" ]] && (( use_env_file )); then
     expected_server=$(env_value KONFLUX_CLUSTER_SERVER || true)
 fi
 if [[ -z "$expected_server" ]]; then
-    printf 'KONFLUX_CLUSTER_SERVER is required for the kflux-lw-p01 guard: %s\n' "$ENV_FILE" >&2
+    printf 'KONFLUX_CLUSTER_SERVER is required in the environment or in the env file: %s\n' "${ENV_FILE:-none}" >&2
     exit 1
 fi
 if [[ "$expected_server" != "$cluster_server" ]]; then
