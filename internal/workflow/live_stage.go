@@ -18,20 +18,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 var PipelineRunGVR = schema.GroupVersionResource{Group: "tekton.dev", Version: "v1", Resource: "pipelineruns"}
 
 type LiveStage struct {
-	Request              config.Request
-	Clients              *cluster.ClientSet
-	RealCluster          *cluster.RealCluster
-	Provider             providers.Provider
-	Source               providers.SourceRepository
-	Fixture              providers.FixtureRepository
-	Prompt               Confirmation
-	Namespace            cleanup.NamespaceService
-	FailedBuildCollector *collector.FailedBuildCollector
+	Request                    config.Request
+	Clients                    *cluster.ClientSet
+	RealCluster                *cluster.RealCluster
+	Provider                   providers.Provider
+	Source                     providers.SourceRepository
+	Fixture                    providers.FixtureRepository
+	Prompt                     Confirmation
+	Namespace                  cleanup.NamespaceService
+	FailedBuildCollector       *collector.FailedBuildCollector
+	restoreRepositoryAllowList func(context.Context) error
+	repositoryAdmissionError   error
+	pacReconfigureRequests     map[string]time.Time
 }
 
 // NewLiveStage parses the source repository and wires clients for the live workflow stages.
@@ -73,10 +77,78 @@ func (s *LiveStage) Preflight(ctx context.Context, manifest *model.RunManifest) 
 	if err != nil {
 		return err
 	}
+	if err := s.checkRepositoryAllowed(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureTenantNamespaceAvailable(ctx, manifest); err != nil {
 		return err
 	}
 	manifest.TargetClusterServer = s.Request.ClusterServer
+	return nil
+}
+
+// checkRepositoryAllowed fails early when the repository admission policy denies the fixture.
+func (s *LiveStage) checkRepositoryAllowed(ctx context.Context) error {
+	allowList, err := s.RealCluster.ReadRepositoryAllowList(ctx)
+	if err != nil {
+		return fmt.Errorf("read repository allow list: %w", err)
+	}
+	url := s.Request.SourceRepository
+	if !allowList.PolicyEnabled || allowList.Allows(url) || s.Request.AllowFixtureRepository {
+		return nil
+	}
+	return fmt.Errorf("repository %s is not allowed by the repository-url-validator admission policy (ConfigMap %s in namespace %s): add %q to its config or rerun with --allow-fixture-repository", url, strings.Join(allowList.ConfigMaps, ", "), cluster.RepositoryValidatorNamespace, url)
+}
+
+// ensureRepositoryAllowed re-adds the fixture URL when the ArgoCD-managed allow
+// list drifts, and reports whether this call added the line.
+func (s *LiveStage) ensureRepositoryAllowed(ctx context.Context) (bool, error) {
+	if !s.Request.AllowFixtureRepository {
+		return false, nil
+	}
+	allowList, err := s.RealCluster.ReadRepositoryAllowList(ctx)
+	if err != nil {
+		return false, fmt.Errorf("read repository allow list: %w", err)
+	}
+	if !allowList.PolicyEnabled || allowList.Allows(s.Request.SourceRepository) {
+		return false, nil
+	}
+	restore, err := s.RealCluster.AllowRepositories(ctx, []string{s.Request.SourceRepository})
+	if err != nil {
+		return false, fmt.Errorf("add %s to the repository allow list: %w", s.Request.SourceRepository, err)
+	}
+	s.restoreRepositoryAllowList = restore
+	fmt.Printf("added %s to the repository allow list %s\n", s.Request.SourceRepository, strings.Join(allowList.ConfigMaps, ", "))
+	return true, nil
+}
+
+// pacReconfigureDue reports whether a PaC reconfigure request should be sent for component.
+func (s *LiveStage) pacReconfigureDue(component string) bool {
+	if s.pacReconfigureRequests == nil {
+		s.pacReconfigureRequests = map[string]time.Time{}
+	}
+	if last, seen := s.pacReconfigureRequests[component]; seen && time.Since(last) < pacReconfigureRequestInterval {
+		return false
+	}
+	s.pacReconfigureRequests[component] = time.Now()
+	return true
+}
+
+// requestPaCReconfigure asks build-service to retry PaC provisioning for a component.
+// build-service records repository admission failures as persistent and stops
+// retrying until this annotation is set.
+func (s *LiveStage) requestPaCReconfigure(ctx context.Context, namespace, component string) error {
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{
+			"annotations": map[string]string{pacReconfigureRequestAnnotation: pacReconfigureRequestValue},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := s.Clients.Dynamic.Resource(cluster.ComponentGVR).Namespace(namespace).Patch(ctx, component, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("request PaC reconciliation for component %s: %w", component, err)
+	}
 	return nil
 }
 
@@ -176,18 +248,47 @@ func (s *LiveStage) TriggerComponents(ctx context.Context, manifest *model.RunMa
 		return fmt.Errorf("fixture has %d components but %d Dockerfile paths", len(components), len(paths))
 	}
 	componentNames := append([]string(nil), components...)
+	if _, err := s.ensureRepositoryAllowed(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		if s.restoreRepositoryAllowList == nil {
+			return
+		}
+		if err := s.restoreRepositoryAllowList(context.WithoutCancel(ctx)); err != nil {
+			fmt.Printf("warning: restore repository allow list: %v\n", err)
+		}
+	}()
 	if err := waitForPaCEnabled(ctx, s.Request.Timeouts.Build, 10*time.Second, componentNames, func(ctx context.Context) ([]unstructured.Unstructured, error) {
+		added, err := s.ensureRepositoryAllowed(ctx)
+		if err != nil {
+			return nil, err
+		}
 		list, err := s.Clients.Dynamic.Resource(cluster.ComponentGVR).Namespace(manifest.Fixture.TenantNamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("list components while waiting for PaC: %w", err)
 		}
 		for index := range list.Items {
-			if err := paCStatusError(&list.Items[index]); err != nil {
+			component := &list.Items[index]
+			if err := paCStatusError(component); err != nil {
+				var admissionErr *repositoryAdmissionError
+				if errors.As(err, &admissionErr) && s.Request.AllowFixtureRepository {
+					s.repositoryAdmissionError = err
+					if added || s.pacReconfigureDue(component.GetName()) {
+						if patchErr := s.requestPaCReconfigure(ctx, manifest.Fixture.TenantNamespace, component.GetName()); patchErr != nil {
+							return nil, patchErr
+						}
+					}
+					continue
+				}
 				return nil, err
 			}
 		}
 		return list.Items, nil
 	}); err != nil {
+		if s.repositoryAdmissionError != nil {
+			return fmt.Errorf("wait for PaC onboarding: %w; last repository admission error: %v", err, s.repositoryAdmissionError)
+		}
 		return fmt.Errorf("wait for PaC onboarding: %w", err)
 	}
 	for index, component := range components {
@@ -255,6 +356,22 @@ func (s *LiveStage) VerifyBuilds(ctx context.Context, manifest *model.RunManifes
 	return nil
 }
 
+// pacRepositoryNotAllowedErrorID is build-service's PaC "repository not allowed" error.
+const pacRepositoryNotAllowedErrorID = 54
+
+// PaC retry controls for repository admission failures.
+const (
+	pacReconfigureRequestAnnotation = "build.appstudio.openshift.io/request"
+	pacReconfigureRequestValue      = "configure-pac"
+	pacReconfigureRequestInterval   = 30 * time.Second
+)
+
+// repositoryAdmissionError marks a PaC failure caused by the repository admission policy.
+type repositoryAdmissionError struct{ message string }
+
+// Error returns the component-level PaC failure message.
+func (e *repositoryAdmissionError) Error() string { return e.message }
+
 // paCStatusError returns an error when a component's PaC status reports onboarding failure.
 func paCStatusError(object *unstructured.Unstructured) error {
 	if object == nil {
@@ -274,10 +391,17 @@ func paCStatusError(object *unstructured.Unstructured) error {
 	if err := json.Unmarshal([]byte(annotation), &status); err != nil || status.PaC.State != "error" {
 		return nil
 	}
-	if status.PaC.ErrorMessage == "" {
+	message := status.PaC.ErrorMessage
+	if status.PaC.ErrorID == pacRepositoryNotAllowedErrorID {
+		if message == "" {
+			message = fmt.Sprintf("error ID %d", status.PaC.ErrorID)
+		}
+		return &repositoryAdmissionError{message: fmt.Sprintf("component %s PaC onboarding failed: %s; the fixture repository is missing from the repository-validator allow list: add it or rerun with --allow-fixture-repository", object.GetName(), message)}
+	}
+	if message == "" {
 		return fmt.Errorf("component %s PaC onboarding failed with error ID %d", object.GetName(), status.PaC.ErrorID)
 	}
-	return fmt.Errorf("component %s PaC onboarding failed: %s", object.GetName(), status.PaC.ErrorMessage)
+	return fmt.Errorf("component %s PaC onboarding failed: %s", object.GetName(), message)
 }
 
 // waitForPaCEnabled polls components until each named component reports enabled PaC status.

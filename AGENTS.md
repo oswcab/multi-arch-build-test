@@ -73,6 +73,9 @@ go test -v ./internal/workflow
 
 # Clean up the exact namespace recorded for a run after ownership checks
 ./bin/konflux-test cleanup --run-id <run-id> --env-file .konflux-test.env
+
+# Temporarily allow the fixture repository in the repository-validator policy
+./bin/konflux-test run github --env-file .konflux-test.env --allow-fixture-repository
 ```
 
 Settings resolve from the process environment first, then the env file. The
@@ -113,6 +116,7 @@ tied to one cluster name.
 **`internal/cluster/`** — Kubernetes interactions
 - `RealCluster` wraps k8s client-go operations
 - Preflight checks validate cluster prerequisites (multi-platform-controller deployment rollout, `host-config` ConfigMap label, per-platform keys the controller parses, and referenced secret keys)
+- Repository admission allow-list checks mirror the `repository-url-validator` policy when it is installed; `--allow-fixture-repository` re-applies the fixture URL if ArgoCD reverts it and requests a PaC reconfigure for blocked Components
 - Build output verification confirms node evidence (Buildah outputs) match expected architectures
 
 **`internal/providers/`** — Git forge abstraction

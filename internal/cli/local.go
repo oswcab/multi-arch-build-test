@@ -213,7 +213,12 @@ func (l Lifecycle) Finalize(ctx context.Context, manifest model.RunManifest, run
 	if l.Prompt == nil {
 		return nil
 	}
-	approved, err := l.Prompt.Confirm(ctx, fmt.Sprintf("Delete owned tenant namespace %s from run %s", namespace, manifest.RunID))
+	message := fmt.Sprintf("Delete owned tenant namespace %s from run %s", namespace, manifest.RunID)
+	if runErr != nil {
+		fmt.Printf("run %s failed at %s; artifacts saved before cleanup\n", manifest.RunID, manifest.Phase)
+		message = fmt.Sprintf("Run %s failed at %s; delete owned tenant namespace %s", manifest.RunID, manifest.Phase, namespace)
+	}
+	approved, err := l.Prompt.Confirm(ctx, message)
 	if err != nil {
 		return err
 	}
