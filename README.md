@@ -25,9 +25,11 @@ resources.
 - An existing kubeconfig context for the target cluster.
 - An explicit expected API server. The setup helper verifies it with
   `oc whoami --show-server` and fails when the active server differs.
-- A ready `multi-platform-controller` deployment and `host-config` entries for
-  `linux/amd64` and `linux/arm64`. Dynamic arm64 provisioning is sufficient;
-  physical arm64 nodes are not required.
+- A `multi-platform-controller` deployment in the `multi-platform-controller`
+  namespace with `host-config` entries for `linux/amd64` and `linux/arm64`.
+  Dynamic arm64 provisioning is sufficient; physical arm64 nodes are not
+  required. Preflight validates the deployment, the platform configuration,
+  and the referenced secrets.
 - PaC onboarding must be complete for all three components, with current
   `.tekton` configuration available on each fixture's default branch. The
   harness waits for PaC readiness before writing trigger comments and does not
@@ -119,6 +121,30 @@ may reuse only a namespace with both exact labels and the resumed run ID.
 After success, the harness prompts before deleting the current owned tenant
 namespace. A declined prompt retains the namespace and successful result.
 After failure, it saves and verifies required artifacts before prompting.
+
+## Preflight checks
+
+Preflight queries the cluster and fails before writing trigger comments unless:
+
+- The kubeconfig's active API server matches `KONFLUX_CLUSTER_SERVER`.
+- Tekton PipelineRun/TaskRun and Application/Component APIs are served.
+- The `multi-platform-controller` deployment in the `multi-platform-controller`
+  namespace is fully rolled out and available.
+- The `host-config` ConfigMap exists and carries the
+  `build.appstudio.redhat.com/multi-platform-config` label the controller
+  watches.
+- Each requested platform appears in `local-platforms`, `dynamic-platforms`,
+  or `dynamic-pool-platforms`.
+- Dynamic and dynamic-pool platforms declare the keys the controller parses:
+  `type` (`aws`, `ibmz`, or `ibmp`), `max-instances`, and `ssh-secret`, plus
+  `concurrency` and `max-age` for pool platforms.
+- Referenced secrets exist in the controller namespace: the SSH secret
+  contains `id_rsa`, and the provider credential secret (`aws-secret` for AWS,
+  `secret` for IBM) contains `access-key-id`/`secret-access-key` or `api-key`.
+
+Failures name the platform and the missing key or secret, for example
+`scheduling check "multi-platform-controller/linux/arm64" failed:
+dynamic.linux-arm64.max-instances is required`.
 
 ## Artifact retention
 
