@@ -147,6 +147,11 @@ may reuse only a namespace with both exact labels and the resumed run ID.
 After success, the harness prompts before deleting the current owned tenant
 namespace. A declined prompt retains the namespace and successful result.
 After failure, it saves and verifies required artifacts before prompting.
+Before the prompt, both outcomes print a summary: the failure reason and phase
+(on failure), the fixture namespace/application/components, trigger commits,
+verified PipelineRuns, failed build log paths, and the artifact directory.
+PaC onboarding errors include guidance; error 70 means the cluster's Pipelines
+as Code GitHub App is not installed on the fixture repository.
 
 ## Preflight checks
 
@@ -238,3 +243,10 @@ the namespace.
 - `PaC onboarding failed: ... 54` means the fixture URL is missing from the
   repository allow list. Add it to the ConfigMap or pass
   `--allow-fixture-repository`.
+- `PaC onboarding failed: ... 70` means the cluster's Pipelines as Code GitHub
+  App is not installed on the fixture repository's owner. Install the app, or
+  run the GitLab fixture instead.
+- `AuthFailure: Not authorized for images` in a failed build log means the
+  multi-platform-controller's cloud account has no launch permission for the
+  configured AMI. Share the AMI with that account or update the platform's
+  `host-config` entry.
