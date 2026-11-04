@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-`konflux-test` is a validation harness for multi-architecture builds on ROKS Konflux clusters. It validates that the multi-platform-controller properly handles `linux/amd64` and `linux/arm64` build orchestration by:
+`konflux-test` is a validation harness for multi-architecture builds on Konflux clusters, independent of where they are deployed. It validates that the multi-platform-controller properly handles `linux/amd64` and `linux/arm64` build orchestration by:
 
 1. Triggering builds against fixed test repositories (GitHub and GitLab)
 2. Waiting for successful PipelineRuns
@@ -27,8 +27,13 @@ The harness never creates, forks, or deletes repositories. It reuses fixed fixtu
 
 ### Building
 ```bash
-go build -o bin/konflux-test ./cmd/konflux-test
+make build          # preferred: writes bin/konflux-test
+make test           # go test ./...
+make lint           # golangci-lint run ./...
+go build -o bin/konflux-test ./cmd/konflux-test   # manual equivalent
 ```
+
+`bin/` is generated and git-ignored.
 
 ### Testing
 Run all tests:

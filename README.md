@@ -1,8 +1,12 @@
-# Local Multi-Architecture Build Testing Tool for ROKS Konflux Clusters
+# Multi-Architecture Build Testing for Konflux Clusters
 
-`konflux-test` validates multi-architecture build creation on `kflux-lw-p01`.
-It reuses fixed repositories, appends one harmless comment to each of their
-three Dockerfiles, waits for matching successful PipelineRuns, verifies
+`konflux-test` validates multi-architecture build creation on any Konflux
+cluster, independent of where it is deployed (ROKS, ROSA, OpenShift, or
+another platform). Nothing in the harness is platform-specific: the target is
+selected by the kubeconfig and the `KONFLUX_CLUSTER_SERVER` guard.
+
+The harness reuses fixed repositories, appends one harmless comment to each of
+their three Dockerfiles, waits for matching successful PipelineRuns, verifies
 pre-publication `linux/amd64` and `linux/arm64` build outputs, then stops.
 
 Fixed fixtures:
@@ -14,8 +18,10 @@ The harness never copies, creates, forks, renames, or deletes repositories. It
 does not query registries, archives, pruning, backup services, or unrelated
 resources.
 
-## Prerequisites
+## Requirements
 
+- Go 1.26 or newer to build the CLI.
+- `oc` on `PATH`, or `KONFLUX_TEST_OC` pointing at the CLI to use.
 - An existing kubeconfig context for `kflux-lw-p01`.
 - An explicit expected API server. The setup helper verifies it with
   `oc whoami --show-server`.
@@ -27,10 +33,30 @@ resources.
   harness waits for PaC readiness before writing trigger comments and does not
   merge onboarding changes.
 
-## Commands
+## Build
+
+Build the CLI into the git-ignored `bin/` directory:
 
 ```bash
-cd konflux-test
+make build   # writes bin/konflux-test
+make test
+make lint    # requires golangci-lint
+make clean   # removes bin/
+```
+
+The equivalent manual build is:
+
+```bash
+go build -o bin/konflux-test ./cmd/konflux-test
+```
+
+`make verify` runs formatting, `go vet`, and the test suites.
+
+## Commands
+
+Run these commands from the repository root:
+
+```bash
 ./bin/konflux-test run github --env-file .konflux-test.env
 ./bin/konflux-test run gitlab --env-file .konflux-test.env
 ./bin/konflux-test run both --env-file .konflux-test.env
