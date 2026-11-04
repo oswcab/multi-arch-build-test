@@ -49,7 +49,7 @@ func NewLiveStage(request config.Request, clients *cluster.ClientSet, provider p
 		RealCluster:          &cluster.RealCluster{Clients: clients},
 		Provider:             provider,
 		Source:               source,
-		Fixture:              providers.FixtureRepository{Owner: source.Owner, Name: source.Name, URL: source.URL},
+		Fixture:              providers.FixtureRepository(source),
 		Namespace:            cleanup.NamespaceService{Dynamic: clients.Dynamic},
 		FailedBuildCollector: &collector.FailedBuildCollector{Dynamic: clients.Dynamic, Kubernetes: clients.Kubernetes},
 	}
@@ -175,10 +175,7 @@ func (s *LiveStage) TriggerComponents(ctx context.Context, manifest *model.RunMa
 	if len(paths) != len(components) {
 		return fmt.Errorf("fixture has %d components but %d Dockerfile paths", len(components), len(paths))
 	}
-	componentNames := make([]string, 0, len(components))
-	for _, component := range components {
-		componentNames = append(componentNames, component)
-	}
+	componentNames := append([]string(nil), components...)
 	if err := waitForPaCEnabled(ctx, s.Request.Timeouts.Build, 10*time.Second, componentNames, func(ctx context.Context) ([]unstructured.Unstructured, error) {
 		list, err := s.Clients.Dynamic.Resource(cluster.ComponentGVR).Namespace(manifest.Fixture.TenantNamespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
@@ -519,15 +516,6 @@ func matchBuildsObjects(objects []unstructured.Unstructured, commits []model.Tri
 	return matchBuildsWithObjects(objects, commits)
 }
 
-// matchBuilds lists PipelineRuns and matches them to trigger commits.
-func matchBuilds(ctx context.Context, commits []model.TriggerCommit, list func(context.Context) ([]unstructured.Unstructured, error)) ([]model.PipelineRunIdentity, bool, error) {
-	objects, err := list(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	return matchBuildsWithObjects(objects, commits)
-}
-
 // matchBuildsWithObjects evaluates exact or post-trigger PipelineRun matches for each commit.
 func matchBuildsWithObjects(objects []unstructured.Unstructured, commits []model.TriggerCommit) ([]model.PipelineRunIdentity, bool, error) {
 	identities := make([]model.PipelineRunIdentity, 0, len(commits))
@@ -608,7 +596,7 @@ func pipelineRunSHA(object *unstructured.Unstructured) string {
 
 // afterTrigger reports whether a PipelineRun was created after its trigger commit.
 func afterTrigger(object *unstructured.Unstructured, commit model.TriggerCommit) bool {
-	return commit.CreatedAt.IsZero() || object.GetCreationTimestamp().Time.After(commit.CreatedAt)
+	return commit.CreatedAt.IsZero() || object.GetCreationTimestamp().After(commit.CreatedAt)
 }
 
 // allBuildsAppeared reports whether each trigger has at least one matching PipelineRun.
@@ -660,27 +648,6 @@ func countBaselinePRs(objects []unstructured.Unstructured) (succeeded, total int
 		}
 	}
 	return succeeded, total
-}
-
-// allNewPipelineRunsTerminal reports whether enough new runs are terminal without enough successes.
-func allNewPipelineRunsTerminal(objects []unstructured.Unstructured, baselineSucceeded, baselineTotal, baselineTerminal, expected int) bool {
-	if expected == 0 || len(objects)-baselineTotal < expected {
-		return false
-	}
-	succeeded, total := countBaselinePRs(objects)
-	newTerminal := countTerminalPRs(objects) - baselineTerminal
-	return newTerminal >= expected && succeeded-baselineSucceeded < expected && total-baselineTotal >= expected
-}
-
-// countTerminalPRs counts PipelineRuns whose Succeeded conditions are True or False.
-func countTerminalPRs(objects []unstructured.Unstructured) int {
-	terminal := 0
-	for index := range objects {
-		if status := pipelineRunConditionStatus(&objects[index]); status == "True" || status == "False" {
-			terminal++
-		}
-	}
-	return terminal
 }
 
 type PipelineRunFailedError struct {

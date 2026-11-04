@@ -77,7 +77,7 @@ func Defaults() Request {
 // Parse builds and validates a request from command-line arguments and environment values.
 func Parse(args []string) (Request, error) {
 	if len(args) == 0 {
-		return Request{}, errors.New("usage: konflux-test run <github|gitlab|both> ... | cleanup --run-id <id> ...")
+		return Request{}, errors.New("usage is konflux-test run <github|gitlab|both> or cleanup --run-id <id>")
 	}
 	req := Defaults()
 	req.Command = args[0]

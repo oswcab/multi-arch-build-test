@@ -139,7 +139,7 @@ func (a *Adapter) UpdateFile(ctx context.Context, fixture providers.FixtureRepos
 	if err != nil {
 		return providers.Commit{}, err
 	}
-	return providers.Commit{SHA: updated.Commit.GetSHA(), URL: updated.Commit.GetHTMLURL(), Message: "konflux-test trigger", CreatedAt: time.Now().UTC()}, nil
+	return providers.Commit{SHA: updated.GetSHA(), URL: updated.GetHTMLURL(), Message: "konflux-test trigger", CreatedAt: time.Now().UTC()}, nil
 }
 
 // isGitHub5xx reports whether err contains an HTTP 5xx GitHub response.

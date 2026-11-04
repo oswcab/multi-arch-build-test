@@ -196,7 +196,7 @@ func (s ManifestStore) SetLatest(manifest model.RunManifest) error {
 	if err := os.Symlink(relativeSource, temporaryLink); err != nil {
 		return fmt.Errorf("create latest artifact link: %w", err)
 	}
-	defer os.Remove(temporaryLink)
+	defer func() { _ = os.Remove(temporaryLink) }()
 
 	latestPath := filepath.Join(s.Root, latestDirectory)
 	if info, err := os.Lstat(latestPath); err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
@@ -334,17 +334,17 @@ func (s ManifestStore) atomicWrite(path string, data []byte, mode os.FileMode) e
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

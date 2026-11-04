@@ -148,7 +148,7 @@ func (c FailedBuildCollector) writeContainerLog(ctx context.Context, namespace, 
 	if err != nil {
 		return "", fmt.Errorf("get logs for %s/%s container %s: %w", namespace, podName, container, err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	data, err := io.ReadAll(stream)
 	if err != nil {
 		return "", fmt.Errorf("read log stream for %s/%s container %s: %w", namespace, podName, container, err)

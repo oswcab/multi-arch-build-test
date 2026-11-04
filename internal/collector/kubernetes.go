@@ -119,7 +119,7 @@ func newPodLogSource(client kubernetes.Interface, namespace string, startedAt ti
 			if err != nil {
 				return nil, err
 			}
-			defer stream.Close()
+			defer func() { _ = stream.Close() }()
 			return io.ReadAll(stream)
 		}
 	}
