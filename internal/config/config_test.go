@@ -18,6 +18,7 @@ var _ = Describe("Parse", func() {
 		Expect(got.ClusterServer).To(Equal("https://api.example:6443"))
 		Expect(got.SourceRepository).To(Equal(DefaultGitHubRepo))
 		Expect(got.TenantNamespace).To(Equal(DefaultGitHubTenantNamespace))
+		Expect(got.Components).To(Equal(DefaultGitHubComponents))
 		Expect(got.Timeouts.Trigger).To(Equal(5 * time.Minute))
 	})
 
@@ -29,6 +30,7 @@ var _ = Describe("Parse", func() {
 		gitlabRequest, err := Parse([]string{"run", "gitlab", "--cluster-server", "https://api.example"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(gitlabRequest.SourceRepository).To(Equal(DefaultGitLabRepo))
+		Expect(gitlabRequest.Components).To(Equal(DefaultGitLabComponents))
 		Expect(githubRequest.TenantNamespace).NotTo(Equal(gitlabRequest.TenantNamespace))
 	})
 

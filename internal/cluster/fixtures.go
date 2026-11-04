@@ -60,8 +60,8 @@ func (s FixtureService) EnsureFixture(ctx context.Context, spec FixtureSpec) (Fi
 	if s.Dynamic == nil {
 		return FixtureResult{}, fmt.Errorf("dynamic client is required")
 	}
-	if spec.Namespace == "" || spec.RunID == "" || spec.Application == "" || len(spec.Components) != 3 {
-		return FixtureResult{}, fmt.Errorf("fixture requires namespace, application, and exactly three components")
+	if spec.Namespace == "" || spec.RunID == "" || spec.Application == "" || len(spec.Components) == 0 {
+		return FixtureResult{}, fmt.Errorf("fixture requires namespace, application, and at least one component")
 	}
 	namespaces := s.Dynamic.Resource(NamespaceGVR)
 	if _, err := namespaces.Get(ctx, spec.Namespace, metav1.GetOptions{}); errors.IsNotFound(err) {

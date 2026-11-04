@@ -84,9 +84,13 @@ func requestForProvider(request config.Request, provider string) config.Request 
 	case config.ProviderGitHub:
 		request.SourceRepository = config.DefaultGitHubRepo
 		request.TenantNamespace = config.DefaultGitHubTenantNamespace
+		request.ApplicationName = config.DefaultGitHubApplication
+		request.Components = append([]config.ComponentFixture(nil), config.DefaultGitHubComponents...)
 	case config.ProviderGitLab:
 		request.SourceRepository = config.DefaultGitLabRepo
 		request.TenantNamespace = config.DefaultGitLabTenantNamespace
+		request.ApplicationName = config.DefaultGitLabApplication
+		request.Components = append([]config.ComponentFixture(nil), config.DefaultGitLabComponents...)
 	}
 	return request
 }

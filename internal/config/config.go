@@ -16,17 +16,31 @@ const (
 	ProviderGitLab               = "gitlab"
 	ProviderBoth                 = "both"
 	DefaultStateDir              = ".konflux-test-runs"
-	DefaultGitHubRepo            = "https://github.com/redhat-appstudio-qe/dr_test_mathwizz"
+	DefaultGitHubRepo            = "https://github.com/oswcab/konflux-test-project"
 	DefaultGitLabRepo            = "https://gitlab.com/konflux-qe/dr_test_mathwizz_gl"
-	DefaultGitHubTenantNamespace = "mathwizz-test-github"
+	DefaultGitHubTenantNamespace = "hcaballe-tenant"
 	DefaultGitLabTenantNamespace = "mathwizz-test-gitlab"
+	DefaultGitHubApplication     = "konflux-multi-arch-test"
+	DefaultGitLabApplication     = "mathwizz"
 	DefaultBranch                = "main"
 )
 
-var DefaultComponentPaths = []string{
-	"web-server/Dockerfile",
-	"history-worker/Dockerfile",
-	"frontend/Dockerfile",
+// ComponentFixture names one component of a fixed fixture and its Dockerfile path.
+type ComponentFixture struct {
+	Name string
+	Path string
+}
+
+// DefaultGitHubComponents is the single-component user-owned GitHub fixture.
+var DefaultGitHubComponents = []ComponentFixture{
+	{Name: "konflux-test-project-c30af", Path: "Dockerfile"},
+}
+
+// DefaultGitLabComponents is the three-component GitLab fixture.
+var DefaultGitLabComponents = []ComponentFixture{
+	{Name: "mathwizz-web-server", Path: "web-server/Dockerfile"},
+	{Name: "mathwizz-history-worker", Path: "history-worker/Dockerfile"},
+	{Name: "mathwizz-frontend", Path: "frontend/Dockerfile"},
 }
 
 type Credentials struct {
@@ -52,7 +66,7 @@ type Request struct {
 	ApplicationName        string
 	SourceRepository       string
 	SourceBranch           string
-	ComponentPaths         []string
+	Components             []ComponentFixture
 	AllowFixtureRepository bool
 	Timeouts               Timeouts
 	Credentials            Credentials
@@ -65,8 +79,8 @@ func Defaults() Request {
 		SourceRepository: DefaultGitHubRepo,
 		SourceBranch:     DefaultBranch,
 		TenantNamespace:  DefaultGitHubTenantNamespace,
-		ApplicationName:  "mathwizz",
-		ComponentPaths:   append([]string(nil), DefaultComponentPaths...),
+		ApplicationName:  DefaultGitHubApplication,
+		Components:       append([]ComponentFixture(nil), DefaultGitHubComponents...),
 		Timeouts: Timeouts{
 			Preflight: 10 * time.Minute,
 			Trigger:   5 * time.Minute,
@@ -93,6 +107,8 @@ func Parse(args []string) (Request, error) {
 		if req.Provider == ProviderGitLab {
 			req.SourceRepository = DefaultGitLabRepo
 			req.TenantNamespace = DefaultGitLabTenantNamespace
+			req.ApplicationName = DefaultGitLabApplication
+			req.Components = append([]ComponentFixture(nil), DefaultGitLabComponents...)
 		}
 		remaining = remaining[1:]
 		if req.Provider != ProviderGitHub && req.Provider != ProviderGitLab && req.Provider != ProviderBoth {
@@ -217,8 +233,13 @@ func (r Request) Validate() error {
 		if r.Provider == ProviderBoth && r.ResumeRunID != "" {
 			return errors.New("run both cannot resume an existing run")
 		}
-		if len(r.ComponentPaths) != len(DefaultComponentPaths) {
-			return fmt.Errorf("exactly %d component paths are required", len(DefaultComponentPaths))
+		if len(r.Components) == 0 {
+			return errors.New("at least one fixture component is required")
+		}
+		for _, component := range r.Components {
+			if strings.TrimSpace(component.Name) == "" || strings.TrimSpace(component.Path) == "" {
+				return errors.New("fixture components require a name and a Dockerfile path")
+			}
 		}
 		if r.Provider == ProviderBoth {
 			if r.SourceRepository != DefaultGitHubRepo || r.TenantNamespace != DefaultGitHubTenantNamespace {
